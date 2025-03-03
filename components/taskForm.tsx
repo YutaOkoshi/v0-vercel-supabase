@@ -25,7 +25,7 @@ export default function TaskForm() {
       <div className="flex items-center space-x-2">
         <Input
           type="text"
-          placeholder="新しいタスクを入力（140文字まで）"
+          placeholder="新しいタスクを入力（140文字まで） "
           value={content}
           onChange={(e) => setContent(e.target.value)}
           maxLength={140}
