@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 
 export default function TaskList() {
-  const { tasks, deleteTask } = useTaskContext()
+  const { tasks, deleteTask, isLoading } = useTaskContext()
 
   const getEmotionLabel = (emotion: Task["emotion"]) => {
     const labels = {
@@ -30,6 +30,12 @@ export default function TaskList() {
       neutral: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100",
     }
     return colors[emotion]
+  }
+
+  if (isLoading) {
+    return (
+      <div className="text-center py-8 text-muted-foreground">読み込み中...</div>
+    )
   }
 
   if (tasks.length === 0) {

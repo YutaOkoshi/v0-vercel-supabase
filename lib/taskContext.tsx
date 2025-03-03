@@ -1,133 +1,138 @@
 "use client"
 
-import { createContext, useContext, useState, type ReactNode } from "react"
+import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
 import type { Task, Emotion, EmotionCount } from "@/lib/types"
-import { v4 as uuidv4 } from "uuid"
+import { supabase } from "@/lib/supabase"
+import { useToast } from "@/hooks/use-toast"
 
 interface TaskContextType {
   tasks: Task[]
-  addTask: (content: string) => void
-  deleteTask: (id: string) => void
+  addTask: (content: string) => Promise<void>
+  deleteTask: (id: string) => Promise<void>
   emotionCounts: EmotionCount
+  isLoading: boolean
 }
 
 const TaskContext = createContext<TaskContextType | undefined>(undefined)
 
 export function TaskProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>([])
-  const [emotionCounts, setEmotionCounts] = useState<EmotionCount>({
-    happy: 0,
-    sad: 0,
-    angry: 0,
-    neutral: 0,
-  })
+  const [isLoading, setIsLoading] = useState(true)
+  const { toast } = useToast()
 
-  // 感情分析のダミー実装
-  const analyzeEmotion = (content: string): Emotion => {
-    // 簡単なキーワードベースのダミー感情分析
-    const text = content.toLowerCase()
+  const emotionCounts = tasks.reduce(
+    (acc, task) => {
+      acc[task.emotion]++
+      return acc
+    },
+    { happy: 0, sad: 0, angry: 0, neutral: 0 } as EmotionCount
+  )
 
-    if (text.includes("嬉しい") || text.includes("楽しい") || text.includes("happy")) {
-      return "happy"
-    } else if (text.includes("悲しい") || text.includes("辛い") || text.includes("sad")) {
-      return "sad"
-    } else if (text.includes("怒り") || text.includes("イライラ") || text.includes("angry")) {
-      return "angry"
-    }
+  useEffect(() => {
+    fetchTasks()
+  }, [])
 
-    // ランダムに感情を返す（デモンストレーション用）
-    const emotions: Emotion[] = ["happy", "sad", "angry", "neutral"]
-    return emotions[Math.floor(Math.random() * emotions.length)]
-
-    /* Bedrockを使用した感情分析の実装例（コメントアウト）
-    async function analyzeSentiment(text) {
-      const bedrock = new AWS.Bedrock();
-      const result = await bedrock.invokeLLM({
-        modelId: 'amazon.titan-text-express-v1',
-        prompt: `以下のテキストの感情を "happy", "sad", "angry", "neutral" のいずれかで分類してください:\n${text}`,
-        maxTokens: 10,
-      });
-      
-      // レスポンスから感情を抽出
-      const response = result.body.toString();
-      // 返却値からemotionタイプに変換するロジックを実装
-      // ...
-    }
-    */
-  }
-
-  // タスク追加と感情分析
-  const addTask = (content: string) => {
-    const emotion = analyzeEmotion(content)
-    const newTask: Task = {
-      id: uuidv4(),
-      content,
-      emotion,
-      createdAt: new Date(),
-    }
-
-    const newTasks = [...tasks, newTask]
-    setTasks(newTasks)
-
-    // 感情カウントの更新
-    const newCounts = { ...emotionCounts }
-    newCounts[emotion]++
-    setEmotionCounts(newCounts)
-
-    // Supabaseへの保存（コメントアウト）
-    /*
-    const saveTaskToSupabase = async (task: Task) => {
+  async function fetchTasks() {
+    try {
       const { data, error } = await supabase
-        .from('tasks')
+        .from("tasks")
+        .select("*")
+        .order("created_at", { ascending: false })
+
+      if (error) throw error
+
+      setTasks(data.map(task => ({
+        ...task,
+        createdAt: new Date(task.created_at)
+      })))
+    } catch (error) {
+      console.error("Error fetching tasks:", error)
+      toast({
+        title: "エラー",
+        description: "タスクの取得に失敗しました",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  async function addTask(content: string) {
+    try {
+      // ランダムな感情を選択
+      const emotions: Emotion[] = ["happy", "sad", "angry", "neutral"]
+      const randomEmotion = emotions[Math.floor(Math.random() * emotions.length)]
+
+      const { data, error } = await supabase
+        .from("tasks")
         .insert([
-          { 
-            id: task.id, 
-            content: task.content, 
-            emotion: task.emotion, 
-            created_at: task.createdAt.toISOString() 
-          }
-        ]);
-      
-      if (error) {
-        console.error('Error saving task to Supabase:', error);
+          {
+            content,
+            emotion: randomEmotion,
+          },
+        ])
+        .select()
+        .single()
+
+      if (error) throw error
+
+      const newTask: Task = {
+        ...data,
+        createdAt: new Date(data.created_at)
       }
+
+      setTasks(prev => [newTask, ...prev])
+      toast({
+        title: "成功",
+        description: "タスクを追加しました",
+      })
+    } catch (error) {
+      console.error("Error adding task:", error)
+      toast({
+        title: "エラー",
+        description: "タスクの追加に失敗しました",
+        variant: "destructive",
+      })
     }
-    
-    saveTaskToSupabase(newTask);
-    */
   }
 
-  // タスク削除
-  const deleteTask = (id: string) => {
-    const taskToDelete = tasks.find((task) => task.id === id)
-    if (!taskToDelete) return
-
-    const newTasks = tasks.filter((task) => task.id !== id)
-    setTasks(newTasks)
-
-    // 感情カウントの更新
-    const newCounts = { ...emotionCounts }
-    newCounts[taskToDelete.emotion]--
-    setEmotionCounts(newCounts)
-
-    // Supabaseからの削除（コメントアウト）
-    /*
-    const deleteTaskFromSupabase = async (id: string) => {
+  async function deleteTask(id: string) {
+    try {
       const { error } = await supabase
-        .from('tasks')
+        .from("tasks")
         .delete()
-        .match({ id });
-      
-      if (error) {
-        console.error('Error deleting task from Supabase:', error);
-      }
+        .eq("id", id)
+
+      if (error) throw error
+
+      setTasks(prev => prev.filter(task => task.id !== id))
+      toast({
+        title: "成功",
+        description: "タスクを削除しました",
+      })
+    } catch (error) {
+      console.error("Error deleting task:", error)
+      toast({
+        title: "エラー",
+        description: "タスクの削除に失敗しました",
+        variant: "destructive",
+      })
     }
-    
-    deleteTaskFromSupabase(id);
-    */
   }
 
-  return <TaskContext.Provider value={{ tasks, addTask, deleteTask, emotionCounts }}>{children}</TaskContext.Provider>
+  return (
+    <TaskContext.Provider
+      value={{
+        tasks,
+        addTask,
+        deleteTask,
+        emotionCounts,
+        isLoading
+      }}
+    >
+      {children}
+    </TaskContext.Provider>
+  )
 }
 
 export function useTaskContext() {
